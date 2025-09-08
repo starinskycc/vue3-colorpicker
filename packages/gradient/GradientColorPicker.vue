@@ -34,32 +34,27 @@
             </div>
           </div>
         </div>
+
+        <span
+          v-if="showDelete"
+          class="vc-gradient__delete"
+          @click="onRemoveStop"
+        ></span>
       </div>
     </div>
     <div class="vc-gradient-picker__body">
-      <div class="vc-color-range" ref="colorRangeRef">
+      <div class="vc-color-range" ref="colorRangeRef" @click="onColorRangeClick">
         <div class="vc-color-range__container">
           <div class="vc-background" :style="gradientBg"></div>
           <div class="vc-gradient__stop__container">
             <div
+              v-for="(item, index) in state.colorStops"
+              :key="index"
               class="vc-gradient__stop"
-              :class="{
-                'vc-gradient__stop--current': state.startActive,
-              }"
-              ref="startGradientRef"
-              :title="lang?.start"
-              :style="{ left: getStartColorLeft + 'px', backgroundColor: state.startColorRgba }"
-            >
-              <span class="vc-gradient__stop--inner"></span>
-            </div>
-            <div
-              class="vc-gradient__stop"
-              :class="{
-                'vc-gradient__stop--current': !state.startActive,
-              }"
-              ref="stopGradientRef"
-              :title="lang?.end"
-              :style="{ left: getEndColorLeft + 'px', backgroundColor: state.endColorRgba }"
+              :class="{ 'vc-gradient__stop--current': state.activeIndex === index }"
+              :style="{ left: getColorLeft(index) + 'px', backgroundColor: item.color.toRgbString() }"
+              @click.stop="onSelectStop(index)"
+              :ref="(el) => setStopRef(el, index)"
             >
               <span class="vc-gradient__stop--inner"></span>
             </div>
@@ -83,7 +78,7 @@
 </template>
 
 <script lang="ts">
-  import { computed, defineComponent, inject, reactive, ref, watch } from "vue";
+  import { computed, defineComponent, inject, reactive, ref, watch, nextTick } from "vue";
   import propTypes from "vue-types";
   import { tryOnMounted, useDebounceFn, useLocalStorage, whenever } from "@vueuse/core";
   import { DOMUtils } from "@aesoper/normal-utils";
@@ -104,10 +99,7 @@
     name: "GradientColorPicker",
     components: { Angle, Display, Alpha, Palette, Board, Hue, Lightness, History },
     props: {
-      startColor: propTypes.instanceOf(Color).isRequired,
-      endColor: propTypes.instanceOf(Color).isRequired,
-      startColorStop: propTypes.number.def(0),
-      endColorStop: propTypes.number.def(100),
+      colorStops: propTypes.array.isRequired,
       angle: propTypes.number.def(0),
       type: propTypes.oneOf(["linear", "radial"]).def("linear"),
       disableHistory: propTypes.bool.def(false),
@@ -116,32 +108,19 @@
       pickerType: propTypes.oneOf(["fk", "chrome"]).def("fk"),
     },
     emits: [
-      "update:startColor",
-      "update:endColor",
+      "update:colorStops",
+      "colorStopsChange",
       "update:angle",
-      "update:startColorStop",
-      "update:endColorStop",
-      "startColorChange",
-      "endColorChange",
-      "advanceChange",
       "angleChange",
-      "startColorStopChange",
-      "endColorStopChange",
+      "advanceChange",
       "typeChange",
     ],
     setup(props, { emit }) {
       const state = reactive({
-        startActive: true,
-        startColor: props.startColor,
-        endColor: props.endColor,
-        startColorStop: props.startColorStop,
-        endColorStop: props.endColorStop,
+        colorStops: props.colorStops as any,
         angle: props.angle,
         type: props.type,
-
-        // rgba
-        startColorRgba: props.startColor.toRgbString(),
-        endColorRgba: props.endColor.toRgbString(),
+        activeIndex: 0,
       });
 
       const parent = inject<ColorPickerProvider>(ColorPickerProviderKey);
@@ -149,16 +128,19 @@
       const advancePanelShow = ref(props.pickerType === "chrome");
 
       // Ref
-      const startGradientRef = ref<HTMLElement>();
-      const stopGradientRef = ref<HTMLElement>();
       const colorRangeRef = ref<HTMLElement>();
 
       watch(
-        () => [props.startColor, props.endColor, props.angle],
-        (val: any[]) => {
-          state.startColor = val[0];
-          state.endColor = val[1];
-          state.angle = val[2];
+        () => props.colorStops,
+        (val: any) => {
+          state.colorStops = val;
+        }
+      );
+
+      watch(
+        () => props.angle,
+        (val: any) => {
+          state.angle = val;
         }
       );
 
@@ -171,89 +153,138 @@
 
       const currentColor: any = computed({
         get: () => {
-          return state.startActive ? state.startColor : state.endColor;
+          return state.colorStops[state.activeIndex].color;
         },
         set: (v) => {
-          if (state.startActive) {
-            state.startColor = v;
-            return;
-          }
-          state.endColor = v;
+          state.colorStops[state.activeIndex].color = v;
         },
       });
 
-      const getStartColorLeft = computed(() => {
-        if (colorRangeRef.value && startGradientRef.value) {
-          const alpha = state.startColorStop / 100;
-          const rect = colorRangeRef.value.getBoundingClientRect();
-          const offsetWidth = startGradientRef.value.offsetWidth;
+      const stopRefs = ref<HTMLElement[]>([]);
 
+      const setStopRef = (el: HTMLElement | null, index: number) => {
+        if (el) {
+          stopRefs.value[index] = el;
+        }
+      };
+
+      const getColorLeft = (index: number) => {
+        if (colorRangeRef.value && stopRefs.value[index]) {
+          const alpha = state.colorStops[index].stop / 100;
+          const rect = colorRangeRef.value.getBoundingClientRect();
+          const offsetWidth = stopRefs.value[index].offsetWidth;
           return Math.round(alpha * (rect.width - offsetWidth) + offsetWidth / 2);
         }
-
         return 0;
-      });
-
-      const getEndColorLeft = computed(() => {
-        if (colorRangeRef.value && stopGradientRef.value) {
-          const alpha = state.endColorStop / 100;
-          const rect = colorRangeRef.value.getBoundingClientRect();
-          const offsetWidth = stopGradientRef.value.offsetWidth;
-
-          return Math.round(alpha * (rect.width - offsetWidth) + offsetWidth / 2);
-        }
-
-        return 0;
-      });
+      };
 
       const gradientBg = computed(() => {
-        let background = `background: linear-gradient(${state.angle}deg, ${state.startColorRgba} ${state.startColorStop}%, ${state.endColorRgba} ${state.endColorStop}%)`;
+        const stops = state.colorStops
+          .map((cs) => `${cs.color.toRgbString()} ${cs.stop}%`)
+          .join(", ");
         if (state.type === "radial") {
-          background = `background: radial-gradient(circle, ${state.startColorRgba} ${state.startColorStop}%, ${state.endColorRgba} ${state.endColorStop}%)`;
+          return `background: radial-gradient(circle, ${stops})`;
         }
-        return background;
+        return `background: linear-gradient(${state.angle}deg, ${stops})`;
       });
 
-      const dragStartRange = (evt: MouseEvent) => {
-        state.startActive = true;
-        if (colorRangeRef.value && startGradientRef.value) {
-          const rect = colorRangeRef.value?.getBoundingClientRect();
+      const dragRange = (index: number, evt: MouseEvent) => {
+        state.activeIndex = index;
+        if (colorRangeRef.value && stopRefs.value[index]) {
+          const rect = colorRangeRef.value.getBoundingClientRect();
+          const offsetWidth = stopRefs.value[index].offsetWidth;
 
           let left = evt.clientX - rect.left;
-          left = Math.max(startGradientRef.value.offsetWidth / 2, left);
-          left = Math.min(left, rect.width - startGradientRef.value.offsetWidth / 2);
+          left = Math.max(offsetWidth / 2, left);
+          left = Math.min(left, rect.width - offsetWidth / 2);
 
-          state.startColorStop = Math.round(
-            ((left - startGradientRef.value.offsetWidth / 2) /
-              (rect.width - startGradientRef.value.offsetWidth)) *
-              100
+          let stop = Math.round(
+            ((left - offsetWidth / 2) / (rect.width - offsetWidth)) * 100
           );
 
-          emit("update:startColorStop", state.startColorStop);
-          emit("startColorStopChange", state.startColorStop);
+          const prev = state.colorStops[index - 1];
+          const next = state.colorStops[index + 1];
+          const min = prev ? prev.stop + 1 : 0;
+          const max = next ? next.stop - 1 : 100;
+          stop = Math.min(Math.max(stop, min), max);
+
+          state.colorStops[index].stop = stop;
+
+          emit("update:colorStops", state.colorStops);
+          emit("colorStopsChange", state.colorStops);
         }
       };
 
-      const dragEndRange = (evt: MouseEvent) => {
-        state.startActive = false;
-
-        if (colorRangeRef.value && stopGradientRef.value) {
-          const rect = colorRangeRef.value?.getBoundingClientRect();
-
-          let left = evt.clientX - rect.left;
-          left = Math.max(stopGradientRef.value.offsetWidth / 2, left);
-          left = Math.min(left, rect.width - stopGradientRef.value.offsetWidth / 2);
-
-          state.endColorStop = Math.round(
-            ((left - stopGradientRef.value.offsetWidth / 2) /
-              (rect.width - stopGradientRef.value.offsetWidth)) *
-              100
-          );
-
-          emit("update:endColorStop", state.endColorStop);
-          emit("endColorStopChange", state.endColorStop);
-        }
+      const onColorRangeClick = (evt: MouseEvent) => {
+        if (!colorRangeRef.value || state.colorStops.length >= 8) return;
+        const rect = colorRangeRef.value.getBoundingClientRect();
+        const stopWidth = 14;
+        let left = evt.clientX - rect.left;
+        left = Math.max(stopWidth / 2, left);
+        left = Math.min(left, rect.width - stopWidth / 2);
+        let stop = Math.round(
+          ((left - stopWidth / 2) / (rect.width - stopWidth)) * 100
+        );
+        const newStop = {
+          color: new Color(currentColor.value.toRgbString()),
+          stop,
+        };
+        state.colorStops.push(newStop);
+        state.colorStops.sort((a, b) => a.stop - b.stop);
+        state.activeIndex = state.colorStops.indexOf(newStop);
+        emit("update:colorStops", state.colorStops);
+        emit("colorStopsChange", state.colorStops);
+        nextTick(() => {
+          initDraggable();
+        });
       };
+
+      const onSelectStop = (index: number) => {
+        state.activeIndex = index;
+      };
+
+      const onRemoveStop = () => {
+        if (state.colorStops.length <= 2) return;
+        state.colorStops.splice(state.activeIndex, 1);
+        state.activeIndex = Math.min(
+          state.activeIndex,
+          state.colorStops.length - 1
+        );
+        emit("update:colorStops", state.colorStops);
+        emit("colorStopsChange", state.colorStops);
+        nextTick(() => {
+          initDraggable();
+        });
+      };
+
+      const showDelete = computed(
+        () => state.colorStops.length > 2 && state.activeIndex > -1
+      );
+
+      const initDraggable = () => {
+        stopRefs.value.forEach((el, index) => {
+          if (el) {
+            DOMUtils.triggerDragEvent(el, {
+              drag: (event: Event) => {
+                dragRange(index, event as MouseEvent);
+              },
+              end: (event: Event) => {
+                dragRange(index, event as MouseEvent);
+              },
+            });
+          }
+        });
+      };
+
+      watch(
+        () => state.colorStops.length,
+        () => {
+          nextTick(() => {
+            stopRefs.value = [];
+            initDraggable();
+          });
+        }
+      );
 
       const onDegreeBlur = (evt: FocusEvent) => {
         const target = evt.target as HTMLInputElement;
@@ -308,13 +339,8 @@
       };
 
       const doColorChange = () => {
-        if (state.startActive) {
-          emit("update:startColor", state.startColor);
-          emit("startColorChange", state.startColor);
-        } else {
-          emit("update:endColor", state.endColor);
-          emit("endColorChange", state.endColor);
-        }
+        emit("update:colorStops", state.colorStops);
+        emit("colorStopsChange", state.colorStops);
       };
 
       const onBack = () => {
@@ -351,41 +377,8 @@
       }, 500);
 
       tryOnMounted(() => {
-        if (stopGradientRef.value && startGradientRef.value) {
-          DOMUtils.triggerDragEvent(stopGradientRef.value, {
-            drag: (event: Event) => {
-              dragEndRange(event as MouseEvent);
-            },
-            end: (event: Event) => {
-              dragEndRange(event as MouseEvent);
-            },
-          });
-          DOMUtils.triggerDragEvent(startGradientRef.value, {
-            drag: (event: Event) => {
-              dragStartRange(event as MouseEvent);
-            },
-            end: (event: Event) => {
-              dragStartRange(event as MouseEvent);
-            },
-          });
-        }
+        initDraggable();
       });
-
-      whenever(
-        () => state.startColor,
-        (value) => {
-          state.startColorRgba = value.toRgbString();
-        },
-        { deep: true }
-      );
-
-      whenever(
-        () => state.endColor,
-        (value) => {
-          state.endColorRgba = value.toRgbString();
-        },
-        { deep: true }
-      );
 
       whenever(
         () => currentColor.value,
@@ -396,13 +389,10 @@
       );
 
       return {
-        startGradientRef,
-        stopGradientRef,
         colorRangeRef,
         state,
         currentColor,
-        getStartColorLeft,
-        getEndColorLeft,
+        getColorLeft,
         gradientBg,
         advancePanelShow,
         onDegreeBlur,
@@ -416,6 +406,11 @@
         onDegreeChange,
         onDisplayChange,
         onTypeChange,
+        onColorRangeClick,
+        onSelectStop,
+        onRemoveStop,
+        showDelete,
+        setStopRef,
         lang: parent?.lang,
       };
     },
@@ -587,6 +582,35 @@
 
     .vc-picker-degree-input {
       margin-left: 8px;
+    }
+
+    .vc-gradient__delete {
+      margin-left: 8px;
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      background-color: rgba(200, 200, 200, 0.25);
+      border-radius: 4px;
+      position: relative;
+
+      &::before,
+      &::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 8px;
+        height: 2px;
+        background-color: #666;
+      }
+
+      &::before {
+        transform: translate(-50%, -50%) rotate(45deg);
+      }
+
+      &::after {
+        transform: translate(-50%, -50%) rotate(-45deg);
+      }
     }
   }
 </style>

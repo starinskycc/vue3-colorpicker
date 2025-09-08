@@ -144,10 +144,10 @@
       const instance = new Color(state.pureColor);
 
       const gradientState = reactive({
-        startColor,
-        endColor,
-        startColorStop: 0,
-        endColorStop: 100,
+        colorStops: [
+          { color: startColor, stop: 0 },
+          { color: endColor, stop: 100 },
+        ],
         angle: 0,
         type: "linear",
         gradientColor: props.gradientColor,
@@ -194,26 +194,11 @@
         if (state.activeKey === "gradient") {
           return {
             ...commonProps,
-            startColor: gradientState.startColor,
-            endColor: gradientState.endColor,
+            colorStops: gradientState.colorStops,
             angle: gradientState.angle,
             type: gradientState.type,
-            startColorStop: gradientState.startColorStop,
-            endColorStop: gradientState.endColorStop,
-            onStartColorChange: (v: Color) => {
-              gradientState.startColor = v;
-              onGradientChange();
-            },
-            onEndColorChange: (v: Color) => {
-              gradientState.endColor = v;
-              onGradientChange();
-            },
-            onStartColorStopChange: (v: number) => {
-              gradientState.startColorStop = v;
-              onGradientChange();
-            },
-            onEndColorStopChange: (v: number) => {
-              gradientState.endColorStop = v;
+            onColorStopsChange: (v: any) => {
+              gradientState.colorStops = v;
               onGradientChange();
             },
             onAngleChange: (v: number) => {
@@ -271,33 +256,30 @@
             colorNode.type.includes("gradient") &&
             colorNode.colorStops.length >= 2
           ) {
-            const startColorVal = colorNode.colorStops[0];
-            const endColorVal = colorNode.colorStops[1];
+            const stops: { color: Color; stop: number }[] = [];
+            colorNode.colorStops.forEach((c) => {
+              const [r, g, b, a] = c.value;
+              stops.push({
+                color: new Color({
+                  r: Number(r),
+                  g: Number(g),
+                  b: Number(b),
+                  a: Number(a),
+                }),
+                stop: Number(c.length?.value) || 0,
+              });
+            });
 
-            gradientState.startColorStop = Number(startColorVal.length?.value) || 0;
-            gradientState.endColorStop = Number(endColorVal.length?.value) || 0;
+            gradientState.colorStops = stops.sort((a, b) => a.stop - b.stop);
 
-            if (colorNode.type === "linear-gradient" && colorNode.orientation?.type === "angular") {
+            if (
+              colorNode.type === "linear-gradient" &&
+              colorNode.orientation?.type === "angular"
+            ) {
               gradientState.angle = Number(colorNode.orientation?.value) || 0;
             }
 
             gradientState.type = colorNode.type.split("-")[0];
-
-            const [r, g, b, a] = startColorVal.value;
-            const [r1, g1, b1, a1] = endColorVal.value;
-
-            gradientState.startColor = new Color({
-              r: Number(r),
-              g: Number(g),
-              b: Number(b),
-              a: Number(a),
-            });
-            gradientState.endColor = new Color({
-              r: Number(r1),
-              g: Number(g1),
-              b: Number(b1),
-              a: Number(a1),
-            });
           }
         } catch (e) {
           console.log(`[Parse Color]: ${e}`);
@@ -317,22 +299,16 @@
       }, props.debounce);
 
       const color2GradientNode = () => {
+      
         const nodes: GradientNode[] = [];
-        const startColorArr = gradientState.startColor.RGB.map((v) => v.toString());
-        const endColorArr = gradientState.endColor.RGB.map((v) => v.toString());
-
-        const colorStops: ColorStop[] = [
-          {
+        const colorStops: ColorStop[] = gradientState.colorStops.map((cs) => {
+          const arr = cs.color.RGB.map((v) => v.toString());
+          return {
             type: "rgba",
-            value: [startColorArr[0], startColorArr[1], startColorArr[2], startColorArr[3]],
-            length: { value: gradientState.startColorStop + "", type: "%" },
-          },
-          {
-            type: "rgba",
-            value: [endColorArr[0], endColorArr[1], endColorArr[2], endColorArr[3]],
-            length: { value: gradientState.endColorStop + "", type: "%" },
-          },
-        ];
+            value: [arr[0], arr[1], arr[2], arr[3]],
+            length: { value: cs.stop + "", type: "%" },
+          } as ColorStop;
+        });
 
         if (gradientState.type === "linear") {
           nodes.push({

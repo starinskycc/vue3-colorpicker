@@ -78,7 +78,7 @@
 </template>
 
 <script lang="ts">
-  import { computed, defineComponent, inject, reactive, ref, watch, nextTick } from "vue";
+  import { computed, defineComponent, inject, reactive, ref, watch, nextTick, ComponentPublicInstance } from "vue";
   import propTypes from "vue-types";
   import { tryOnMounted, useDebounceFn, useLocalStorage, whenever } from "@vueuse/core";
   import { DOMUtils } from "@aesoper/normal-utils";
@@ -117,7 +117,7 @@
     ],
     setup(props, { emit }) {
       const state = reactive({
-        colorStops: props.colorStops as any,
+        colorStops: props.colorStops as any as any[],
         angle: props.angle,
         type: props.type,
         activeIndex: 0,
@@ -160,11 +160,14 @@
         },
       });
 
-      const stopRefs = ref<HTMLElement[]>([]);
+      const stopRefs = ref<(HTMLElement | null)[]>([]);
 
-      const setStopRef = (el: HTMLElement | null, index: number) => {
-        if (el) {
-          stopRefs.value[index] = el;
+  const setStopRef = (el: Element | ComponentPublicInstance | null | undefined, index: number) => {
+        // Vue template refs can be Element, ComponentInstance or null; coerce to HTMLElement when possible
+        if (el && (el as HTMLElement).offsetWidth !== undefined) {
+          stopRefs.value[index] = el as HTMLElement;
+        } else {
+          stopRefs.value[index] = null;
         }
       };
 
@@ -180,7 +183,7 @@
 
       const gradientBg = computed(() => {
         const stops = state.colorStops
-          .map((cs) => `${cs.color.toRgbString()} ${cs.stop}%`)
+          .map((cs: any) => `${cs.color.toRgbString()} ${cs.stop}%`)
           .join(", ");
         if (state.type === "radial") {
           return `background: radial-gradient(circle, ${stops})`;
@@ -230,7 +233,7 @@
           stop,
         };
         state.colorStops.push(newStop);
-        state.colorStops.sort((a, b) => a.stop - b.stop);
+        state.colorStops.sort((a: any, b: any) => a.stop - b.stop);
         state.activeIndex = state.colorStops.indexOf(newStop);
         emit("update:colorStops", state.colorStops);
         emit("colorStopsChange", state.colorStops);

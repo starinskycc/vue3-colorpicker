@@ -88,8 +88,8 @@ export default defineComponent({
 
     return () => {
       return (
-        <div class="bee-angle">
-          <div class="bee-angle__round" ref={angleRef} style={getStyle.value} />
+        <div className="bee-angle">
+          <div className="bee-angle__round" ref={angleRef as any} style={getStyle.value} />
         </div>
       );
     };

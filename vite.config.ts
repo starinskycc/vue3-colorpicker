@@ -13,5 +13,18 @@ export default defineConfig({
       protocol: "ws",
     },
   },
+  css: {
+    preprocessorOptions: {
+      less: {
+        javascriptEnabled: true,
+      },
+      scss: {
+        charset: false,
+        outputStyle: 'compressed',
+        api: 'modern-complier',
+        silenceDeprecations: ['legacy-js-api']
+      },
+    },
+  },
   plugins: [vue(), vueJsx()],
 });

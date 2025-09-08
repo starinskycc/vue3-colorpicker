@@ -148,7 +148,7 @@
           { color: startColor, stop: 0 },
           { color: endColor, stop: 100 },
         ],
-        angle: 0,
+        angle: 90,
         type: "linear",
         gradientColor: props.gradientColor,
       });

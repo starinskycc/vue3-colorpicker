@@ -1,6 +1,6 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
-import * as path from "path";
+import path from "path";
 import vueJsx from "@vitejs/plugin-vue-jsx";
 import dts from "vite-plugin-dts";
 
@@ -19,6 +19,12 @@ export default defineConfig({
       less: {
         javascriptEnabled: true,
       },
+      scss: {
+        charset: false,
+        outputStyle: 'compressed',
+        api: 'modern-compiler',
+        silenceDeprecations: ['legacy-js-api']
+      },
     },
   },
   build: {
@@ -33,9 +39,17 @@ export default defineConfig({
       // 请确保外部化那些你的库中不需要的依赖
       external: external,
       output: {
+        exports: "named",
         // 在 UMD 构建模式下为这些外部化的依赖提供一个全局变量
         globals: {
           vue: "Vue",
+          "@vueuse/core": "VueUse",
+          "tinycolor2": "tinycolor",
+          "gradient-parser": "gradientParser",
+          "@popperjs/core": "Popper",
+          "vue-types": "VueTypes",
+          "@aesoper/normal-utils": "NormalUtils",
+          "lodash-es": "lodash"
         },
       },
       plugins: [],

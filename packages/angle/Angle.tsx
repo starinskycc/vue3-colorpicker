@@ -41,7 +41,8 @@ export default defineComponent({
       () => props.angle,
       (angle: number) => {
         rotate.value = angle;
-      }
+      },
+      {immediate: true},
     );
 
     const updateAngle = (): void => {
